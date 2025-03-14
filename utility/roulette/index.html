@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ルーレットアプリ</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.2.37/dist/vue.global.prod.js"></script>
+    <style>
+        body {
+            display: grid;
+            grid-template-columns: 400px 400px;
+            grid-template-rows: 400px 200px;
+            width: 800px;
+            height: 600px;
+            margin: 0 auto;
+            font-family: Arial, sans-serif;
+        }
+        .roulette-container {
+            grid-column: 1 / 2;
+            grid-row: 1 / 2;
+            width: 400px;
+            height: 400px;
+            position: relative;
+        }
+        .panel {
+            grid-column: 1 / 2;
+            grid-row: 2 / 3;
+            width: 400px;
+            height: 200px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .list {
+            grid-column: 2 / 3;
+            grid-row: 1 / 3;
+            width: 400px;
+            height: 600px;
+            overflow-y: auto;
+            padding: 10px;
+            border-left: 2px solid #ccc;
+        }
+
+        .roulette {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            position: absolute;
+            overflow: hidden;
+            transform: rotate(0deg);
+            transition: transform 2s ease-out;
+        }
+        .indicator {
+            position: absolute;
+            top: 50%;
+            left: 100%;
+            transform: translate(-50%, -50%) rotate(90deg);
+            width: 0;
+            height: 0;
+            border-left: 20px solid transparent;
+            border-right: 20px solid transparent;
+            border-top: 40px solid red;
+        }
+        .result {
+            font-size: 24px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 5px;
+            padding: 5px;
+            margin: 5px 0;
+        }
+        .color-swatch {
+            width: 30px;
+            height: 30px;
+            border: 1px solid #ccc;
+            cursor: pointer;
+        }
+        .color-picker {
+            display: none;
+        }
+        .add-btn {
+            width: 100%;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="roulette-container">
+            <canvas
+                ref="canvas"
+                width="400" height="400"
+                :style="{ transform: `rotate(${rotation}deg)`, transition: spinning ? 'none' : '2s ease-out' }"
+            ></canvas>
+            <div class="indicator"></div>
+        </div>
+        <div class="panel">
+            <button @click="toggleSpin">{{ spinning ? 'ストップ' : 'スタート' }}</button>
+            <div class="result" v-if="!spinning">当たり: {{ selectedItem }}</div>
+        </div>
+        <div class="list">
+            <div v-for="(item, index) in items" :key="index" class="item">
+                <input type="text" v-model="item.text" @input="drawRoulette" />
+                <div class="color-swatch" :style="{ backgroundColor: item.color }" @click="focusColorPicker(index)"></div>
+                <input type="color" class="color-picker" ref="colorPickers" :data-index="index" v-model="item.color" @input="updateColor(index)" />
+                <button @click="removeItem(index)">削除</button>
+            </div>
+            <button class="add-btn" @click="addItem">項目追加</button>
+        </div>
+    </div>
+
+    <script>
+        const app = Vue.createApp({
+            data() {
+                return {
+                    items: [
+                        { text: '項目1', color: '#ff0000', textColor: '#00ffff' },
+                        { text: '項目2', color: '#0000ff', textColor: '#ffff00' },
+                        { text: '項目3', color: '#008000', textColor: '#ff80ff' },
+                        { text: '項目4', color: '#ffff00', textColor: '#0000ff' }
+                    ],
+                    spinning: false,
+                    rotation: 0,
+                    animationId: null,
+                    speed: 20,
+                    selectedItem: '',
+                    lastHue: null
+                };
+            },
+            mounted() {
+                this.$nextTick(() => {
+                    this.drawRoulette();
+                });
+            },
+            methods: {
+                // ルーレット描画
+                drawRoulette() {
+                    const canvas = this.$refs.canvas;
+                    const ctx = canvas.getContext('2d');
+                    const numItems = this.items.length;
+
+                    if (numItems === 0) {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        return;
+                    }
+
+                    const anglePerItem = (2 * Math.PI) / numItems;
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                    this.items.forEach((item, index) => {
+                        const startAngle = index * anglePerItem;
+                        const endAngle = startAngle + anglePerItem;
+
+                        // セクション描画
+                        ctx.beginPath();
+                        ctx.moveTo(200, 200);
+                        ctx.arc(200, 200, 200, startAngle, endAngle);
+                        ctx.closePath();
+                        ctx.fillStyle = item.color;
+                        ctx.fill();
+
+                        // テキスト描画
+                        ctx.save();
+                        ctx.translate(200, 200);
+                        ctx.rotate(startAngle + anglePerItem / 2);
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillStyle = this.getComplementaryColor(item.color);
+                        ctx.font = '20px Arial';
+                        ctx.fillText(item.text, 120, 0);
+                        ctx.restore();
+                    });
+                },
+
+                // スタート／ストップ
+                toggleSpin() {
+                    if (this.spinning) {
+                        // ストップ
+                        this.slowDown();
+                    } else {
+                        // スタート
+                        this.spinning = true;
+                        this.speed = 20;
+                        // 回転開始時はアニメーションOFF
+                        this.$refs.canvas.style.transition = 'none';
+                        this.spinRoulette();
+                    }
+                },
+
+                // 回転処理
+                spinRoulette() {
+                    if (!this.spinning) return;
+                    this.rotation += this.speed;
+                    this.animationId = requestAnimationFrame(this.spinRoulette);
+                },
+
+                // 減速して止まる
+                slowDown() {
+                    const interval = setInterval(() => {
+                        if (this.speed > 0.5) {
+                            this.speed *= 0.9;
+                        } else {
+                            clearInterval(interval);
+                            this.spinning = false;
+
+                            // ここで当たった項目を確定する
+                            this.pickItem();
+                        }
+                    }, 100);
+                },
+
+                // 当たり項目の選択のみ (ホイール角度は変更しない)
+                pickItem() {
+                    const numItems = this.items.length;
+                    if (numItems === 0) {
+                        this.selectedItem = '';
+                        return;
+                    }
+
+                    // 現在の回転角度 0~360 に正規化
+                    let currentRotation = this.rotation % 360;
+                    if (currentRotation < 0) currentRotation += 360;
+
+                    const angle = 360 / numItems;
+
+                    // インジケータは 90度 → pointerAngle = (90 - currentRotation)
+                    let pointerAngle = (-currentRotation) % 360;
+                    if (pointerAngle < 0) pointerAngle += 360;
+
+                    // どのセクションか
+                    const idx = Math.floor(pointerAngle / angle) % numItems;
+                    this.selectedItem = this.items[idx]?.text || '';
+                },
+
+                // 項目を追加
+                addItem() {
+                    // 同系色にならないよう、色相差が一定以上になるまでランダムに試行
+                    let newColor = '';
+                    let tries = 0;
+                    while (tries < 20) {
+                        const randHue = Math.floor(Math.random() * 360);
+                        // S=100%, L=70%程度
+                        newColor = this.hslToHex(randHue, 1, 0.7);
+
+                        if (this.lastHue === null) {
+                            this.lastHue = randHue;
+                            break;
+                        } else {
+                            const diff = Math.abs(randHue - this.lastHue);
+                            const minDiff = Math.min(diff, 360 - diff);
+                            if (minDiff > 40) {
+                                this.lastHue = randHue;
+                                break;
+                            }
+                        }
+                        tries++;
+                    }
+
+                    const newItem = {
+                        text: `項目${this.items.length + 1}`,
+                        color: newColor,
+                        textColor: this.getComplementaryColor(newColor)
+                    };
+
+                    this.items.push(newItem);
+                    this.drawRoulette();
+                },
+
+                // 項目を削除
+                removeItem(index) {
+                    this.items.splice(index, 1);
+                    this.drawRoulette();
+                },
+
+                // 色更新時に再描画
+                updateColor(index) {
+                    this.$nextTick(() => {
+                        this.drawRoulette();
+                    });
+                },
+
+                // カラーピッカーを開く
+                focusColorPicker(index) {
+                    const colorPickers = this.$refs.colorPickers;
+                    const picker = colorPickers[index];
+                    picker.click();
+                },
+
+                // 補色を取得
+                getComplementaryColor(hexColor) {
+                    let c = hexColor.replace('#', '');
+                    if (c.length === 3) {
+                        c = c[0] + c[0] + c[1] + c[1] + c[2] + c[2];
+                    }
+                    const r = parseInt(c.substring(0,2), 16);
+                    const g = parseInt(c.substring(2,4), 16);
+                    const b = parseInt(c.substring(4,6), 16);
+
+                    const [h, s, l] = this.rgbToHsl(r, g, b);
+                    const h2 = (h + 180) % 360;
+                    return this.hslToHex(h2, s, l);
+                },
+
+                // RGB -> HSL
+                rgbToHsl(r, g, b) {
+                    r /= 255;
+                    g /= 255;
+                    b /= 255;
+                    const max = Math.max(r, g, b);
+                    const min = Math.min(r, g, b);
+                    let h, s;
+                    const l = (max + min) / 2;
+                    const d = max - min;
+                    if (d === 0) {
+                        h = 0;
+                        s = 0;
+                    } else {
+                        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                        switch (max) {
+                            case r:
+                                h = (g - b) / d + (g < b ? 6 : 0);
+                                break;
+                            case g:
+                                h = (b - r) / d + 2;
+                                break;
+                            case b:
+                                h = (r - g) / d + 4;
+                                break;
+                        }
+                        h *= 60;
+                    }
+                    return [h, s, l];
+                },
+
+                // HSL -> HEX
+                hslToHex(h, s, l) {
+                    const c = (1 - Math.abs(2 * l - 1)) * s;
+                    const hp = h / 60;
+                    const x = c * (1 - Math.abs(hp % 2 - 1));
+                    let r = 0, g = 0, b = 0;
+
+                    if (0 <= hp && hp < 1) {
+                        r = c; g = x; b = 0;
+                    } else if (1 <= hp && hp < 2) {
+                        r = x; g = c; b = 0;
+                    } else if (2 <= hp && hp < 3) {
+                        r = 0; g = c; b = x;
+                    } else if (3 <= hp && hp < 4) {
+                        r = 0; g = x; b = c;
+                    } else if (4 <= hp && hp < 5) {
+                        r = x; g = 0; b = c;
+                    } else if (5 <= hp && hp < 6) {
+                        r = c; g = 0; b = x;
+                    }
+
+                    const m = l - c / 2;
+                    r = Math.round((r + m) * 255);
+                    g = Math.round((g + m) * 255);
+                    b = Math.round((b + m) * 255);
+
+                    return '#' + [r, g, b]
+                      .map(val => val.toString(16).padStart(2, '0'))
+                      .join('');
+                }
+            }
+        });
+        app.mount('#app');
+    </script>
+</body>
+</html>
