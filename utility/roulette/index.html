@@ -7,7 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body>
-  <div id="app" class="p-4 w-full h-screen flex flex-col box-border">
+  <div id="app" class="p-4 w-full h-screen flex flex-col box-border bg-white">
     <!-- メインコンテナ -->
     <div class="flex flex-1 overflow-hidden">
       <!-- 左パネル -->
@@ -63,14 +63,14 @@
         <div class="flex flex-wrap items-center gap-2 mb-4">
           <!-- スタート／ストップボタン -->
           <button
-            class="px-4 py-2 rounded border border-gray-300 shadow"
+            class="px-4 py-2 rounded shadow bg-blue-500 text-white hover:bg-blue-600 transition-colors duration-200"
             @click="toggleSpin"
           >
             {{ isSpinning ? 'ストップ' : 'スタート' }}
           </button>
           <!-- 項目追加ボタン -->
           <button
-            class="px-4 py-2 rounded border border-gray-300 shadow"
+            class="px-4 py-2 rounded shadow bg-blue-500 text-white hover:bg-blue-600 transition-colors duration-200"
             @click="addItem"
           >
             項目追加
@@ -212,12 +212,6 @@
           rawFinal += 360;
         }
 
-        // 絶対角度として保存
-        // 現在の絶対角を currentAngle(0..360) にみなしているので
-        // finalAngle = (currentRotation - currentAngle) + rawFinal
-        // ただしここでは currentRotation 自体を絶対角で管理していないので単純に
-        // finalAngle = rawFinal (0<=rawFinal<some big) のまま扱う
-
         this.finalAngle = rawFinal;
         // 2秒ルールのため、開始時刻を記録
         this.decelerationStartTime = performance.now();
@@ -262,9 +256,8 @@
           // 2秒未満なら当たりを過ぎる
           let elapsed = performance.now() - this.decelerationStartTime;
           if (elapsed < 2000) {
-            // 当たりを一旦過ぎる
+            // 当たりを一旦過ぎる => finalAngle += 360
             if (diff < 10) {
-              // finalAngleに+360
               this.finalAngle += 360;
             }
           }
